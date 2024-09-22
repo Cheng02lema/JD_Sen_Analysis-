@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>贝叶斯模型批量预测分析</title>
+    <!-- 引入 Bootstrap CSS，使用国内CDN -->
+    <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/4.5.2/css/bootstrap.min.css">
+    <!-- 引入 ECharts -->
+    <script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.2.2/echarts.min.js"></script>
+    <!-- 引入 jsPDF -->
+    <script src="https://cdn.bootcdn.net/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body, html {
+            height: 100%;
+            margin: 0;
+            font-family: 'Arial', sans-serif;
+            background: #f8f8f7;
+            color: #333;
+        }
+
+        .navbar {
+            background-color: #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .navbar-brand {
+            font-weight: bold;
+            color: #007aff;
+        }
+
+        .navbar-brand:hover {
+            color: #005ecb;
+        }
+
+        .form-container, .batch-form-container {
+            max-width: 600px;
+            margin: 20px auto;
+            background: #fff;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+
+        .btn-primary {
+            background-color: #007aff;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            transition: all 0.3s ease-in-out;
+        }
+
+        .btn-primary:hover {
+            background-color: #005ecb;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.2);
+        }
+
+        .batch-result-container {
+            margin-top: 30px;
+            padding: 20px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        .result-card {
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 10px;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+            animation: popIn 0.5s ease-out forwards;
+        }
+
+        .result-card.good-review {
+            background: #d4edda;
+            border-color: #c3e6cb;
+        }
+
+        .result-card.bad-review {
+            background: #f8d7da;
+            border-color: #f5c6cb;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes popIn {
+            0% {
+                opacity: 0;
+                transform: scale(0.8);
+            }
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .statistics-container {
+            margin-top: 30px;
+            padding: 20px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        #overallRating {
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <a class="navbar-brand" href="#">贝叶斯分析</a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav">
+                <li class="nav-item">
+                    <a class="nav-link" href="/predict/">语句预测</a>
+                </li>
+                <li class="nav-item active">
+                    <a class="nav-link" href="/pl_predict/">批量预测</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/wordclouds">可视化展示</a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container statistics-container">
+        <h3 class="text-center">整体好评率</h3>
+        <div id="overallRating">0%</div>
+    </div>
+
+    <div class="container batch-form-container">
+        <h2 class="text-center">批量文本预测分析</h2>
+        <form id="batchForm">
+            <div class="form-group">
+                <label for="file_input">上传文本文件：</label>
+                <input type="file" class="form-control-file" id="file_input" accept=".txt">
+            </div>
+            <button type="submit" class="btn btn-primary">开始分析</button>
+            <button type="button" id="downloadPdf" class="btn btn-secondary">下载PDF报告</button>
+        </form>
+        <div class="batch-result-container" id="resultContainer">
+            <p>结果将显示在这里</p>
+        </div>
+    </div>
+
+    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.5.1/jquery.slim.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+        // 加载本地的 SimSun.ttf 字体文件并转换为 Base64 编码
+        fetch('http://chios.top/SimSun.ttf')
+            .then(response => response.blob())
+            .then(blob => {
+                const reader = new FileReader();
+                reader.onloadend = function () {
+                    const fontBase64 = reader.result.split(',')[1];
+                    window.fontBase64 = fontBase64;
+                };
+                reader.readAsDataURL(blob);
+            });
+
+        document.getElementById('batchForm').onsubmit = function (event) {
+            event.preventDefault();
+            const fileInput = document.getElementById('file_input');
+            if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                const formData = new FormData();
+                formData.append('file', file);
+
+                fetch('http://127.0.0.1:8001/batchpredict', {
+                    method: 'POST',
+                    body: formData
+                }).then(response => response.json())
+                .then(data => {
+                    const resultContainer = document.querySelector('.batch-result-container');
+                    resultContainer.innerHTML = ''; // 清空之前的结果
+                    let totalGoodReviews = 0;
+                    data.results.forEach((result, index) => {
+                        if (result.result === '好评') {
+                            totalGoodReviews += 1;
+                        }
+                        const resultCard = document.createElement('div');
+                        resultCard.className = `result-card ${result.result === '好评' ? 'good-review' : 'bad-review'}`;
+                        resultCard.innerHTML = `
+                            <strong>结果 #${index + 1}:</strong><br>
+                            <strong>原文:</strong> ${result.text}<br>
+                            <strong>预测结果:</strong> ${result.result}<br>
+                            <strong>好评率:</strong> ${(result.good_review_probability * 100).toFixed(2)}%<br>
+                            <strong>置信度:</strong> ${(result.confidence * 100).toFixed(2)}%
+                        `;
+                        resultContainer.appendChild(resultCard);
+                    });
+
+                    // 计算并展示整体好评率
+                    const overallRating = (totalGoodReviews / data.results.length * 100).toFixed(2);
+                    document.getElementById('overallRating').innerText = `${overallRating}%`;
+
+                    // 将结果和整体好评率保存到一个对象中以便后续生成PDF
+                    window.analysisResults = {
+                        overallRating: overallRating,
+                        results: data.results
+                    };
+                }).catch(error => {
+                    console.error('Fetch error:', error);
+                    document.querySelector('.batch-result-container').innerHTML = `<p>Error: ${error.message}</p>`;
+                });
+            }
+        };
+
+        document.getElementById('downloadPdf').onclick = function () {
+            if (window.fontBase64) {
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF();
+
+                pdf.addFileToVFS('SimSun.ttf', window.fontBase64);
+                pdf.addFont('SimSun.ttf', 'SimSun', 'normal');
+                pdf.setFont('SimSun');
+
+                // 添加整体好评率到PDF
+                pdf.setFontSize(16);
+                pdf.text('整体好评率', 10, 10);
+                pdf.setFontSize(14);
+                pdf.text(`${window.analysisResults.overallRating}%`, 10, 20);
+
+                // 添加每个结果到PDF
+                let yOffset = 30;
+                pdf.setFontSize(12);
+                window.analysisResults.results.forEach((result, index) => {
+                    if (yOffset > 270) {
+                        pdf.addPage();
+                        yOffset = 10;
+                    }
+                    pdf.text(`结果 #${index + 1}:`, 10, yOffset);
+                    yOffset += 10;
+                    pdf.text(`原文: ${result.text}`, 10, yOffset);
+                    yOffset += 10;
+                    pdf.text(`预测结果: ${result.result}`, 10, yOffset);
+                    yOffset += 10;
+                    pdf.text(`好评率: ${(result.good_review_probability * 100).toFixed(2)}%`, 10, yOffset);
+                    yOffset += 10;
+                    pdf.text(`置信度: ${(result.confidence * 100).toFixed(2)}%`, 10, yOffset);
+                    yOffset += 20;
+                });
+
+                pdf.save('batch_analysis_report.pdf');
+            } else {
+                alert('字体文件加载失败，请刷新页面重试。');
+            }
+        };
+    </script>
+</body>
+</html>
